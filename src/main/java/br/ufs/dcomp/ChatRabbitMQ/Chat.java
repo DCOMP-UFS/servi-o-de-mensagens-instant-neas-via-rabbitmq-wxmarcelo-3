@@ -4,31 +4,69 @@ import com.rabbitmq.client.*;
 
 import java.io.IOException;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
 public class Chat {
+  
+  private static final String HOST = "18.212.222.26";
+  private static final String USER = "admin";
+  private static final String PASSWORD = "password";
+  
+  private static String currentUser;
+  private static String currentRecipient = "";
 
   public static void main(String[] argv) throws Exception {
     ConnectionFactory factory = new ConnectionFactory();
-    factory.setHost("ip-da-instancia-da-aws"); // Alterar
-    factory.setUsername("usuário-do-rabbitmq-server"); // Alterar
-    factory.setPassword("senha-do-rabbitmq-server"); // Alterar
+    factory.setHost(HOST);
+    factory.setUsername(USER);
+    factory.setPassword(PASSWORD);
     factory.setVirtualHost("/");
     Connection connection = factory.newConnection();
     Channel channel = connection.createChannel();
     
-    String QUEUE_NAME = "minha-fila";
-                      //(queue-name, durable, exclusive, auto-delete, params); 
-    channel.queueDeclare(QUEUE_NAME, false,   false,     false,       null);
+    // Definir usuário atual
+    BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+    System.out.print("User: ");
+    currentUser = reader.readLine();
     
-    Consumer consumer = new DefaultConsumer(channel) {
-      public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body)           throws IOException {
+    // Criar fila para receber mensagens
+    channel.queueDeclare(currentUser, false, false, false, null);
+    
+    // Thread para ouvir mensagens recebidas
+    Thread receiverThread = new Thread(() -> {
+        try {
+            DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("\nMensagem recebida de (" + delivery.getProperties().getReplyTo() + "): " + message);
+                System.out.print(currentRecipient + ">> ");
+            };
+            channel.basicConsume(currentUser, true, deliverCallback, consumerTag -> {});
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    });
+    receiverThread.start();
+    
+    while (true) {
+    System.out.print((currentRecipient.isEmpty() ? "" : currentRecipient) + ">> ");
+    String input = reader.readLine();
 
-        String message = new String(body, "UTF-8");
-        System.out.println(message);
-
+    // Alterar destinatário
+    if (input.startsWith("@")) {
+        currentRecipient = input;
+    } else {
+        // Enviar mensagem
+        if (!currentRecipient.isEmpty()) {
+            String recipient = currentRecipient.replace("@", "").trim();
+            channel.basicPublish("", recipient, new AMQP.BasicProperties.Builder()
+                    .replyTo(currentUser)
+                    .build(), input.getBytes("UTF-8"));
+            } else {
+                System.out.println("Selecione um destinatário com @usuario antes de enviar uma mensagem.");
+          }
       }
-    };
-                      //(queue-name, autoAck, consumer);    
-    channel.basicConsume(QUEUE_NAME, true,    consumer);
+    }
     
   }
 }
