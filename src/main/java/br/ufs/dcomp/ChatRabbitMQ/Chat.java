@@ -7,9 +7,12 @@ import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
+import java.util.Date;
+import java.text.SimpleDateFormat;
+
 public class Chat {
   
-  private static final String HOST = "18.212.222.26";
+  private static final String HOST = "54.174.239.156";
   private static final String USER = "admin";
   private static final String PASSWORD = "password";
   
@@ -37,8 +40,12 @@ public class Chat {
     Thread receiverThread = new Thread(() -> {
         try {
             DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+                //ex: (21/09/2016 às 20:53) marciocosta diz: E aí, Tarcisio! Vamos sim!
+                SimpleDateFormat sdf = new SimpleDateFormat("(dd/MM/yyyy 'às' HH:mm) ");
+                String dataHora = delivery.getProperties().getTimestamp() != null ? sdf.format(delivery.getProperties().getTimestamp()) : " ";
+                
                 String message = new String(delivery.getBody(), "UTF-8");
-                System.out.println("\nMensagem recebida de (" + delivery.getProperties().getReplyTo() + "): " + message);
+                System.out.println("\n"+ dataHora + delivery.getProperties().getReplyTo() + " diz: " + message);
                 System.out.print(currentRecipient + ">> ");
             };
             channel.basicConsume(currentUser, true, deliverCallback, consumerTag -> {});
@@ -61,6 +68,7 @@ public class Chat {
             String recipient = currentRecipient.replace("@", "").trim();
             channel.basicPublish("", recipient, new AMQP.BasicProperties.Builder()
                     .replyTo(currentUser)
+                    .timestamp(new Date())
                     .build(), input.getBytes("UTF-8"));
             } else {
                 System.out.println("Selecione um destinatário com @usuario antes de enviar uma mensagem.");
