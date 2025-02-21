@@ -2,6 +2,9 @@ package br.ufs.dcomp.ChatRabbitMQ;
 
 import com.rabbitmq.client.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.io.FileOutputStream;
 import java.io.File;
 import java.io.BufferedReader;
@@ -16,14 +19,17 @@ import com.google.protobuf.util.JsonFormat;
 
 public class Chat {
   
-  private static final String HOST = "54.175.105.99";
+  private static final String HOST = "3.85.159.36";
   private static final String USER = "admin";
   private static final String PASSWORD = "password";
+  private static Channel channel;
   
   private static String currentUser;
   private static String currentRecipient = "";
   private static String currentGroup = "";
   private static String currentMode = "";
+  
+  
 
   public static void main(String[] argv) throws Exception {
     ConnectionFactory factory = new ConnectionFactory();
@@ -32,7 +38,7 @@ public class Chat {
     factory.setPassword(PASSWORD);
     factory.setVirtualHost("/");
     Connection connection = factory.newConnection();
-    Channel channel = connection.createChannel();
+    channel = connection.createChannel();
     
     // Definir usuário atual
     BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -56,6 +62,20 @@ public class Chat {
                     String emissor = mensagem.getEmissor();
                     String grupo = mensagem.getGrupo();
                     String conteudoTexto = mensagem.getConteudo().getCorpo().toStringUtf8();
+                    
+                    if (mensagem.hasNomeArquivo()) {
+                    String fileName = mensagem.getNomeArquivo();
+                    byte[] fileBytes = mensagem.getConteudo().getCorpo().toByteArray();
+                    String dir = "/home/" + System.getProperty("user.name") + "/chat/downloads/";
+                    new File(dir).mkdirs();
+                    FileOutputStream fos = new FileOutputStream(dir + fileName);
+                    fos.write(fileBytes);
+                    fos.close();
+                    System.out.println("\n(" + mensagem.getData() + " às " + mensagem.getHora() + ") Arquivo \"" + fileName + "\" recebido de @" + mensagem.getEmissor() + "!");
+                } else {
+                    // Código existente para mensagens de texto
+                }
+
             
                     if(!grupo.isEmpty()){
                         System.out.println("\n" + dataHora + emissor + "#" + grupo + " diz: " + conteudoTexto);
@@ -63,6 +83,7 @@ public class Chat {
                     else{
                         System.out.println("\n" + dataHora + emissor + " diz: " + conteudoTexto);
                     }
+                    
                     
                     if (currentMode.equals("group")){
                         System.out.print(currentGroup + ">> ");
@@ -161,12 +182,31 @@ public class Chat {
                     System.out.println("Uso correto: !removeGroup <nome_grupo>");
                 }
                 break;
-    
+                
+                case "!upload":
+                    if (parts.length == 2) {
+                        String filePath = parts[1];
+                        File file = new File(filePath);
+                        if (file.exists() && file.isFile()) {
+                            System.out.println("Enviando \"" + filePath + "\" para " + (currentMode.equals("group") ? currentGroup : currentRecipient) + ".");
+                            new Thread(() -> sendFile(filePath)).start();
+                        } else {
+                            System.out.println("Arquivo não encontrado: " + filePath);
+                        }
+                    } else {
+                        System.out.println("Uso correto: !upload <caminho_arquivo>");
+                    }
+                    break;
+
             default:
                 System.out.println("Comando desconhecido.");
         }
         continue;
     }
+    
+    
+
+    
       
     // Enviar mensagem
     if ((!currentRecipient.isEmpty() && currentMode.equals("individual")) || (!currentGroup.isEmpty() && currentMode.equals("group"))) {
@@ -200,5 +240,46 @@ public class Chat {
     }
     
   }
+    private static void sendFile(String filePath) {
+        try {
+            File file = new File(filePath);
+            String fileName = file.getName();
+            
+            // Detectar o tipo MIME
+            Path source = Paths.get(filePath);
+            String mimeType = Files.probeContentType(source);
+            if (mimeType == null) mimeType = "application/octet-stream";
+    
+            byte[] fileBytes = Files.readAllBytes(source);
+    
+            // Criar mensagem com arquivo usando Protobuf
+            MensagemProto.Mensagem mensagem = MensagemProto.Mensagem.newBuilder()
+                .setEmissor(currentUser)
+                .setData(new SimpleDateFormat("dd/MM/yyyy").format(new Date()))
+                .setHora(new SimpleDateFormat("HH:mm").format(new Date()))
+                .setGrupo(currentMode.equals("group") ? currentGroup.replace("#", "") : "")
+                .setConteudo(MensagemProto.Conteudo.newBuilder()
+                    .setTipo(mimeType)
+                    .setCorpo(com.google.protobuf.ByteString.copyFrom(fileBytes))
+                    .build())
+                .setNomeArquivo(fileName)
+                .build();
+    
+            byte[] messageBytes = mensagem.toByteArray();
+    
+            // Enviar o arquivo para o grupo ou usuário
+            if (currentMode.equals("group")) {
+                channel.basicPublish(currentGroup.replace("#", ""), "", null, messageBytes);
+            } else {
+                channel.basicPublish("", currentRecipient.replace("@", ""), null, messageBytes);
+            }
+    
+            System.out.println("Arquivo \"" + fileName + "\" foi enviado para " + (currentMode.equals("group") ? currentGroup : currentRecipient) + "!");
+            
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 
 }

@@ -1338,6 +1338,10 @@ public final class MensagemProto {
         return super.mergeUnknownFields(unknownFields);
       }
 
+    public Builder setNomeArquivo(String fileName) {
+        return null;
+    }
+
 
       // @@protoc_insertion_point(builder_scope:ChatRabbitMQ.Mensagem)
     }
@@ -1375,6 +1379,12 @@ public final class MensagemProto {
     @java.lang.Override
     public br.ufs.dcomp.ChatRabbitMQ.MensagemProto.Mensagem getDefaultInstanceForType() {
       return DEFAULT_INSTANCE;
+    }
+    public boolean hasNomeArquivo() {
+      return false;
+    }
+    public String getNomeArquivo() {
+        return null;
     }
 
   }
