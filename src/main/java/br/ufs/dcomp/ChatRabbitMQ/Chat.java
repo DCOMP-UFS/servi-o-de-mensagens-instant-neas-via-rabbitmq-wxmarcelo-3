@@ -36,11 +36,10 @@ public class Chat {
   private static final String PASSWORD = "password";
   
   private static final String HOST_API = "http://interface-rabbitmq-14ddf23a3cbeaadd.elb.us-east-1.amazonaws.com";
-  private static final String USER_API = "guest";
-  private static final String PASSWORD_API = "guest";
   private static final String VHOST = "%2F"; // "%2F" representa "/" no URL encoding
 
   private static Channel channel;
+  private static Channel channel_files;
   
   private static String currentUser;
   private static String currentRecipient = "";
@@ -57,6 +56,7 @@ public class Chat {
     factory.setVirtualHost("/");
     Connection connection = factory.newConnection();
     channel = connection.createChannel();
+    channel_files = connection.createChannel();
     
     // Definir usuário atual
     BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -67,7 +67,7 @@ public class Chat {
     channel.queueDeclare(currentUser, false, false, false, null);
     
     // Criar fila para receber arquivos
-    channel.queueDeclare(currentUser + "_files", false, false, false, null);
+    channel_files.queueDeclare(currentUser + "_files", false, false, false, null);
     
     // Thread para ouvir mensagens recebidas
     Thread msgReceiverThread = new Thread(() -> {
@@ -147,7 +147,7 @@ public class Chat {
                 }
             };
             
-            channel.basicConsume(currentUser + "_files", true, deliverCallback, consumerTag -> {});
+            channel_files.basicConsume(currentUser + "_files", true, deliverCallback, consumerTag -> {});
             
         } catch (Exception e) {
             e.printStackTrace();
@@ -188,11 +188,11 @@ public class Chat {
                     String groupName = parts[1];
                     // Declara um exchange do tipo "fanout" para broadcast das mensagens
                     channel.exchangeDeclare(groupName, "fanout");
-                    channel.exchangeDeclare(groupName + "_files", "fanout"); // para arquivos
+                    channel_files.exchangeDeclare(groupName + "_files", "fanout"); // para arquivos
                 
                     // Vincula a fila do usuário atual ao exchange do grupo
                     channel.queueBind(currentUser, groupName, "");
-                    channel.queueBind(currentUser + "_files", groupName + "_files", ""); // para arquivos
+                    channel_files.queueBind(currentUser + "_files", groupName + "_files", ""); // para arquivos
                     System.out.println("Grupo '" + groupName + "' criado e vinculado ao usuário " + currentUser);
                 } else {
                     System.out.println("Uso correto: !addGroup <nome_grupo>");
@@ -204,7 +204,7 @@ public class Chat {
                     String groupName = parts[2];
                     String userName = parts[1];
                     channel.queueBind(userName, groupName, "");
-                    channel.queueBind(userName + "_files", groupName + "_files", ""); // para arquivos
+                    channel_files.queueBind(userName + "_files", groupName + "_files", ""); // para arquivos
                     System.out.println("Usuário '" + userName + "' adicionado ao grupo '" + groupName + "'");
                 } else {
                     System.out.println("Uso correto: !addUser <nome_usuario> <nome_grupo>");
@@ -216,7 +216,7 @@ public class Chat {
                     String groupName = parts[2];
                     String userName = parts[1];
                     channel.queueUnbind(userName, groupName, "");
-                    channel.queueUnbind(userName + "_files", groupName + "_files", ""); // para arquivos
+                    channel_files.queueUnbind(userName + "_files", groupName + "_files", ""); // para arquivos
                     System.out.println("Usuário '" + userName + "' removido do grupo '" + groupName + "'");
                 } else {
                     System.out.println("Uso correto: !delFromGroup <nome_usuario> <nome_grupo>");
@@ -227,7 +227,7 @@ public class Chat {
                 if (parts.length == 2) {
                     String groupName = parts[1];
                     channel.exchangeDelete(groupName);
-                    channel.exchangeDelete(groupName + "_files"); // para arquivos
+                    channel_files.exchangeDelete(groupName + "_files"); // para arquivos
                     System.out.println("Grupo '" + groupName + "' removido.");
                     if (currentGroup.replace("#", "").trim().equals(groupName)){
                         currentMode = "";
@@ -350,12 +350,12 @@ public class Chat {
             
             // Enviar o arquivo para o grupo ou usuário
             if (currentMode.equals("group")) {
-                channel.basicPublish(currentGroup.replace("#", "")  + "_files", "", null, messageBytes); // para arquivos
+                channel_files.basicPublish(currentGroup.replace("#", "")  + "_files", "", null, messageBytes); // para arquivos
             } else {
-                channel.basicPublish("", currentRecipient.replace("@", "")  + "_files", null, messageBytes);
+                channel_files.basicPublish("", currentRecipient.replace("@", "")  + "_files", null, messageBytes);
             }
     
-            System.out.println("Arquivo \"" + fileName + "\" foi enviado para " + dest + "!");
+            System.out.println("\nArquivo \"" + fileName + "\" foi enviado para " + dest + "!");
             
             if (currentMode.equals("group")){
                 System.out.print(currentGroup + ">> ");
